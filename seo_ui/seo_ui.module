@@ -1,0 +1,243 @@
+<?php
+
+/**
+ * @file
+ * A module that glues together various SEO modules in a unified interface.
+ */
+
+/**
+ * Implements hook_form_alter().
+ */
+function seo_ui_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  // Alter settings forms
+  if (strpos($form_id, 'settings_form') !== FALSE) {
+    switch ($form_id) {
+      // Redirect
+      case 'redirect_settings_form' :
+        _seo_ui_alter_redirect_settings($form, $form_state, $form_id);
+        break;
+      default :
+        break;
+    }
+  }
+  // Create a vertical tab for node edit forms
+  if (preg_match('#node_(.*?)_form#e', $form_id, $match)) {
+    // Establish the SEO vertical tab
+    $form['seo_vtab'] = array(
+      '#type' => 'details',
+      '#title' => t('Search engine optimization (SEO)'),
+      '#group' => 'advanced',
+      '#attached' => array(
+        'library' => array(
+          'seo.form'
+        ),
+      ),
+      '#attributes' => array(
+        'class' => array(
+          'seo-settings'
+        )
+      ),
+      '#weight' => 50,
+    );
+  }
+  // Alter node or taxonomy term forms
+  if (preg_match('#node_(.*?)_form#e', $form_id, $match) || preg_match('#taxonomy_term_(.*?)_form#e', $form_id, $match)) {
+    // Metatags
+    _seo_ui_alter_metatags($form, $form_state, $form_id);
+
+    // Path
+    _seo_ui_alter_path($form, $form_state, $form_id);
+
+    // Redirect
+    _seo_ui_alter_redirect($form, $form_state, $form_id);
+  }
+}
+
+/**
+ * Redirect settings alter.
+ */
+function _seo_ui_alter_redirect_settings(&$form, $form_state, $form_id) {
+  // Change text of the auto redirect checkbox
+  if (isset($form['redirect_auto_redirect'])) {
+    $form['redirect_auto_redirect']['#title'] = t('Create redirects when published URL aliases are changed.');
+  }
+  // Hide the query string pass-through checkbox, but retain its setting value
+  if (isset($form['redirect_passthrough_querystring'])) {
+    $form['redirect_passthrough_querystring'] = array(
+      '#type' => 'hidden',
+      '#value' => 1,
+      '#weight' => 100,
+    );
+  }
+  // Changes to the redirect status select form item
+  if (isset($form['redirect_default_status_code'])) {
+    $form['redirect_default_status_code']['#title'] = t('Default redirect type');
+    $form['redirect_default_status_code']['#description'] = t('Learn more about <a href="http://en.wikipedia.org/wiki/List_of_HTTP_status_codes#3xx_Redirection">HTTP redirect status codes</a>.');
+  }
+}
+
+/**
+ * Metatag node alters.
+ */
+function _seo_ui_alter_metatags(&$form, $form_state, $form_id) {
+  if (\Drupal::moduleHandler()->moduleExists('metatag')) {
+    // Remove unwanted properties.
+    unset($form['metatags']['#attached']['js']);
+    // Add the new tab to the vertical SEO tab if it exists.
+    if (isset($form['seo_vtab'])) {
+      // Ungroup the metatags item.
+      unset($form['metatags']['#group']);
+      // Alter the descriptions of metatags fields to include a link to default settings
+      // The destination of the link may be admin/config/search/metatags/config/node
+      // in the general case (global default settings for content in metatag module)
+      // or it will be admin/config/search/metatags/config/node:type in the specific case.
+      // Determine if a link exists for the current content type.  If so use it
+      // or else fallback to the default global setting link.  Display it if
+      // the user has permissions to go there.
+      // Determine the node type
+      $node_type = substr($form_id, 0, (strpos($form_id, '_node_form')));
+      // Two possible paths
+      $base_metatags_content_path = 'admin/config/search/metatag/node';
+      $specific_metatags_content_path = $base_metatags_content_path .':'. $node_type;
+      // See if a metatags setting for that node type exists and the user can access it.
+      $specific_path = \Drupal::service('path.validator')->isValid($specific_metatags_content_path);
+      $base_path = \Drupal::service('path.validator')->isValid($base_metatags_content_path);
+      if ($specific_path) {
+        $link = $specific_metatags_content_path;
+      }
+      elseif ($base_path) {
+        $link = $base_metatags_content_path;
+      }
+      if (isset($link)) {
+        // Traverse the metatags form array and alter the descriptions
+        // to link back to metatags module default settings.
+        _seo_ui_fix_metatag_descriptions($form['metatags'], $link);
+      }
+
+      // Move the Available Tokens fieldset into the main SEO vertical tab.
+      $form['seo_vtab']['token_group'] = $form['metatags']['token_group'];
+      // sink it to the bottom
+      $form['seo_vtab']['token_group']['#weight'] = 100;
+      unset($form['metatags']['token_group']);
+
+      // Move the form.
+      $form['seo_vtab']['metatags'] = $form['metatags'];
+
+      // Remove the default submit handler since it fails after we alter the
+      // form by moving metatags form around.  Add our own handler that does the
+      // same as the original did.
+      if ($metasubmit = array_search('metatag_metatags_form_submit', $form['#submit'])) {
+        unset($form['#submit'][$metasubmit]);
+        $form['#submit'][] = '_seo_ui_alter_metatags_submit';
+      }
+      // New fielset for the metatags title
+      $form['seo_vtab']['metatags_title'] = array(
+        '#type' => 'details',
+        '#title' => t('HTML Page Title Settings'),
+        '#weight' => 1,
+        '#open' => FALSE
+      );
+      // Assign the metatags title to our new metatags_title fieldset
+      $form['seo_vtab']['metatags_title']['title'] = $form['metatags']['title'];
+
+      // Unset the metatags form title from it's original location
+      unset($form['seo_vtab']['metatags']['title']);
+
+      // Unset the original metatags form
+      unset($form['metatags']);
+
+    }
+  }
+}
+
+/**
+ * Helper function to add links to the default settings for the metatags fields.
+ */
+function _seo_ui_fix_metatag_descriptions(&$element, $link){
+  if(isset($element)) {
+    foreach (element_children($element) as $key) {
+      if(!stristr($key, '#')){
+        // If this is the advanced part of the metatag form drill down recursively.
+        if($key == 'advanced'){
+          _seo_ui_fix_metatag_descriptions($element[$key], $link);
+        }
+        $element[$key]['value']['#description'] =  $element[$key]['value']['#description'] . ' ' . t('Override this !default_settings. ', array('!default_settings' => l('default setting', $link)));
+      }
+    }
+  }
+}
+
+/**
+ * Customized form submit handler for altered metatag form.
+ */
+function _seo_ui_alter_metatags_submit($form, &$form_state){
+  $values = array();
+  $defaults = $form['seo_vtab']['metatags']['#metatag_defaults'];
+  // Populate the values of the metatag title from the form
+  $form_state['values']['metatags']['title']['value'] = $form['seo_vtab']['metatags_title']['title']['value']['#value'];
+  $values = &$form_state['values']['metatags'];
+  metatag_filter_values_from_defaults($values, $defaults);
+}
+
+
+/**
+ * Path and Pathauto node alters.
+ */
+function _seo_ui_alter_path(&$form, $form_state, $form_id) {
+  if (\Drupal::moduleHandler()->moduleExists('path')) {
+    $form['path']['#type'] = 'details';
+    $form['path']['#title'] = 'URL Settings';
+    $form['path']['#weight'] = 0;
+    $form['path']['#open'] = TRUE;
+    if (isset($form['path']['widget']['0']['alias'])) {
+      $form['path']['widget']['0']['alias']['#weight'] = 2;
+      $form['path']['widget']['0']['alias']['#description'] = t('Specify an alternative URL by which this content can be accessed. <b>Use a relative path and remove the trailing slash</b>');
+    }
+    // Add the new tab to the vertical SEO tab if it exists.
+    if (isset($form['seo_vtab'])) {
+      // ungroup the path item
+      unset($form['path']['#group']);
+      // Move the form and unset the original
+      $form['seo_vtab']['path'] = $form['path'];
+      unset($form['path_settings']);
+    }
+  }
+}
+
+/**
+ * Redirect node alter.
+ */
+function _seo_ui_alter_redirect(&$form, $form_state, $form_id) {
+  if (\Drupal::moduleHandler()->moduleExists('redirect')) {
+    if (isset($form['redirect']['list']) && !empty($form['redirect']['list']['#rows'])) {
+      $form['redirect']['list']['#caption'] = t('The following URLs point to this URL');
+      if (isset($form['redirect']['actions'])) {
+        $form['redirect']['actions']['#weight'] = 5;
+        $form['redirect']['actions']['#links']['add']['title'] = t('Add URL redirect');
+      }
+      // See http://drupal.org/node/1244524 for fixing Redirect module to order
+      // action above the list.
+      $form['redirect']['list']['#weight'] = 10;
+      $form['redirect']['#title'] = t('URL Redirects');
+
+      // Remove unwanted properties
+      unset($form['redirect']['#attached']['js']);
+      unset($form['redirect']['#description']);
+
+      // Add the new tab to the vertical SEO tab if it exists.
+      if (isset($form['seo_vtab'])) {
+        // ungroup the redirect item
+        unset($form['redirect']['#group']);
+        // Move the form and unset the original
+        $form['seo_vtab']['path']['redirect'] = $form['redirect'];
+        if (!isset($form['seo_vtab']['path']['redirect']['#parents'])) {
+          $form['seo_vtab']['path']['redirect']['#parents'] = array('redirect');
+        }
+        unset($form['redirect']);
+      }
+    }
+    else {
+      unset($form['redirect']);
+    }
+  }
+}

@@ -1,0 +1,6 @@
+name: Unified SEO UI
+type: module
+description: Glues together various SEO modules in a unified interface.
+package: Other
+version: 8.x-1.x-dev
+core: 8.x
