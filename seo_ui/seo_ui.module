@@ -130,18 +130,20 @@ function _seo_ui_alter_metatags(&$form, $form_state, $form_id) {
         unset($form['#submit'][$metasubmit]);
         $form['#submit'][] = '_seo_ui_alter_metatags_submit';
       }
-      // New fielset for the metatags title
-      $form['seo_vtab']['metatags_title'] = array(
-        '#type' => 'details',
-        '#title' => t('HTML Page Title Settings'),
-        '#weight' => 1,
-        '#open' => FALSE
-      );
-      // Assign the metatags title to our new metatags_title fieldset
-      $form['seo_vtab']['metatags_title']['title'] = $form['metatags']['title'];
+      if (isset($form['metatags']['title'])) {
+        // New fielset for the metatags title
+        $form['seo_vtab']['metatags_title'] = array(
+          '#type' => 'details',
+          '#title' => t('HTML Page Title Settings'),
+          '#weight' => 1,
+          '#open' => FALSE
+        );
+        // Assign the metatags title to our new metatags_title fieldset
+        $form['seo_vtab']['metatags_title']['title'] = $form['metatags']['title'];
 
-      // Unset the metatags form title from it's original location
-      unset($form['seo_vtab']['metatags']['title']);
+        // Unset the metatags form title from it's original location
+        unset($form['seo_vtab']['metatags']['title']);
+      }
 
       // Unset the original metatags form
       unset($form['metatags']);
