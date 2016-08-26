@@ -16,8 +16,6 @@ function seo_ui_install() {
     ->condition('type', 'module')
     ->condition('name', 'seo_ui')
     ->execute();
-  // Set the redirect module alias purge ageing policy to six months
-  variable_set('redirect_purge_inactive,', 15552000);
 }
 
 

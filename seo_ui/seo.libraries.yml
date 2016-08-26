@@ -1,6 +1,0 @@
-seo.form:
-  version: 8.x
-  js:
-    js/seo_ui.js: {}
-  css:
-    css/seo_ui.admin.css: {}
