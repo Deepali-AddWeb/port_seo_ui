@@ -14,7 +14,8 @@ function seo_ui_form_alter(&$form, \Drupal\Core\Form\FormStateInterface $form_st
     // Establish the SEO vertical tab
     $form['seo_vtab'] = array(
       '#type' => 'details',
-      '#title' => t('Search engine optimization (SEOPathauto      '#group' => 'advanced',
+      '#title' => t('Search engine optimization (SEO)'),
+      '#group' => 'advanced',
       '#attributes' => array(
         'class' => array(
           'seo-settings'
